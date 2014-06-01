@@ -1,23 +1,18 @@
 from numpy import *
 from pylab import *
+from scipy import signal
 from numpy import fft
 from random import randint
 import numpy as np
 
-no_of_bits = 10  # Number of Bits
+no_of_bits = 8  # Number of Bits
 base=2     #radix
 levels = base**no_of_bits       # Total Number of Quantized Levels
 Vm = levels                     # Max Voltage
-no_of_iterations = 1           #No of times the DAC is run
-time_init = 0                   #start time
-time_final = time_init + 1      #end time
-time_step = 0.1                 #time steps
-total_steps = (time_final - time_init)/time_step
-rvalue = 1                      #load resistor
-cvalue = 0.001                  #load capacitance
+no_of_iterations = 1            #No of times the DAC is run
 mu = 1                          #mean of radix
 sigma = 0.0                     #std dev of radix
-alpha = 0.001                   #higher order coefficient
+alpha = 0.0                   #higher order coefficient
 order = 2                       #order of non linearity
 transposed_matrix = [[0 for x in arange(no_of_iterations)] for x in arange(levels)]
 for p in arange(levels):
@@ -34,7 +29,7 @@ current_sources=zeros(base**no_of_bits - 1)
 ################Sample and Hold Circuit###############
 dig_out_adc = zeros(no_of_bits)
 sample_length = 1
-fx_max = Vm-1
+fx_max = Vm - 1
 sample_duration = 0.001
 t = np.arange(0 ,sample_length, sample_duration)
 f=10.0
@@ -104,7 +99,12 @@ no_of_inputs = len(adc_output) #input count
 
     
 dig_input=adc_output
-
+time_init = 0                                   #start time
+time_final = time_init + 1*sample_duration      #end time
+time_step = 0.1*sample_duration                 #time steps
+total_steps = (time_final - time_init)/time_step
+rvalue = 1                                      #load resistor
+cvalue = 0.001*sample_duration                                  #load capacitance
 def mismatch_power_calculator(current_source, radix, exponent, num_bits):
     val = 0
     skip_array =[1.0*2**x for x in arange(exponent + 1, num_bits)]
@@ -124,7 +124,7 @@ def current_cell(current_source,x,radix,alpha,order):
     for m in x:
         output += int(x[f])* mismatch_power_calculator(current_source, radix, length-1-f, no_of_bits)
         f+=1
-    output +=alpha*output**order
+    output +=alpha*(output**order)
     return output
     
 def first_order_out_rc(step_size, time_init, time_final, time_step, rvalue, cvalue):
@@ -191,14 +191,14 @@ for d in arange(no_of_iterations):
         arr=array_2
         tmpval= array_2[len(array_2)-1]
         if dig_input[count] == dig_input[count-1]:
-            array_1 = first_order_out_rc(desired_voltage-tmpval, time_init+1, time_init+2, time_step, rvalue, cvalue)
+            array_1 = first_order_out_rc(desired_voltage-tmpval, time_init+1*sample_duration, time_init+2*sample_duration, time_step, rvalue, cvalue)
         else:
             array_1 = first_order_out_rc(desired_voltage-tmpval, time_init, time_final, time_step, rvalue, cvalue)
     
         array_2 = [tmpval + array_element for array_element in array_1]
         if count!=0:
             array_2= concatenate((arr,array_2), axis=0)
-    array_2 = array_2/max(array_2)*(levels - 1)
+    #array_2 = array_2/max(array_2)*(levels - 1)
     #print dnlandinl(levels,array_2,d,total_steps)
     plot(array_2)
     show()
@@ -236,7 +236,16 @@ for d in arange(no_of_iterations):
     show()
 
 ######################ADC feedback###############
-dac_analog_output = [array_2[k] for k in arange(0,len(array_2),total_steps)]
-adc_output = adc(dac_analog_output, max(dac_analog_output), no_of_bits)
 
+adc_sampling_duration = 10*sample_duration
+adc_sampling_frequency = 1.0/adc_sampling_duration
+filter_order = 4
+cutoff_freq = adc_sampling_frequency/2.0 
+b, a = signal.butter(filter_order,cutoff_freq,'low',analog = True)
+w, h = signal.freqs(b, a)
+plot (20*log10(abs(h)))
+show()
+dac_analog_output = [array_2[k-1] for k in arange(1*total_steps,len(array_2)+1,adc_sampling_duration)]
+adc_feedback_output = adc(dac_analog_output, max(dac_analog_output), no_of_bits)
+bin_to_dec = zeros(len(adc_feedback_output))
 
