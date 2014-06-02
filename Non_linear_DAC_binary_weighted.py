@@ -12,7 +12,7 @@ Vm = levels                     # Max Voltage
 no_of_iterations = 1            #No of times the DAC is run
 mu = 1                          #mean of radix
 sigma = 0.0                     #std dev of radix
-alpha = 0.0                   #higher order coefficient
+alpha = 0.0                     #higher order coefficient
 order = 2                       #order of non linearity
 transposed_matrix = [[0 for x in arange(no_of_iterations)] for x in arange(levels)]
 for p in arange(levels):
@@ -35,8 +35,8 @@ t = np.arange(0 ,sample_length, sample_duration)
 f=10.0
 fx = fx_max/2.0+fx_max/2.0 * sin(2*pi*f*t/sample_length)
 #fx = t
-plot(fx)
-show()
+#plot(fx)
+#show()
 
 #Input SINAD
 Fkk = fft.rfft(fx)
@@ -67,8 +67,8 @@ sfdr_input = 10*log10(SignalPow/worst_spur)
 print "SFDR_input",sfdr_input
 
 #Plot the signal
-plot (20*log10(abs(Fkk)))
-show()
+#plot (20*log10(abs(Fkk)))
+#show()
 
 #############ADC using successive approximation#############
 def adc(fx,fx_max,bit_num):
@@ -200,8 +200,8 @@ for d in arange(no_of_iterations):
             array_2= concatenate((arr,array_2), axis=0)
     #array_2 = array_2/max(array_2)*(levels - 1)
     #print dnlandinl(levels,array_2,d,total_steps)
-    plot(array_2)
-    show()
+    #plot(array_2)
+    #show()
     
     #Output SINAD
     Fk = fft.rfft(array_2)
@@ -237,15 +237,24 @@ for d in arange(no_of_iterations):
 
 ######################ADC feedback###############
 
-adc_sampling_duration = 10*sample_duration
-adc_sampling_frequency = 1.0/adc_sampling_duration
-filter_order = 4
-cutoff_freq = adc_sampling_frequency/2.0 
-b, a = signal.butter(filter_order,cutoff_freq,'low',analog = True)
-w, h = signal.freqs(b, a)
-plot (20*log10(abs(h)))
+dac_sampling_frequency = 1.0/sample_duration
+adc_sampling_frequency = dac_sampling_frequency/10.0
+adc_sampling_duration = 1.0/adc_sampling_frequency
+dac_nyquist_frequency = dac_sampling_frequency/2.0
+filter_order = 10
+cutoff_freq_fraction = adc_sampling_frequency/dac_nyquist_frequency 
+b, a = signal.butter(filter_order,cutoff_freq_fraction,'low')
+w, h = signal.freqs(b,a)
+plot (w,20*log10(abs(h)))
+xscale('log')
 show()
-dac_analog_output = [array_2[k-1] for k in arange(1*total_steps,len(array_2)+1,adc_sampling_duration)]
-adc_feedback_output = adc(dac_analog_output, max(dac_analog_output), no_of_bits)
-bin_to_dec = zeros(len(adc_feedback_output))
+array_2_filtered = signal.filtfilt(b, a, array_2)
+plot (array_2_filtered)
+show()
+Fk_filtered = fft.rfft(array_2_filtered)
+plot (20*log10(abs(Fk_filtered)))
+show()
+array_2_filtered_sampled = [array_2_filtered[k-1] for k in arange(total_steps*adc_sampling_duration/sample_duration,len(array_2_filtered)+1,total_steps*adc_sampling_duration/sample_duration)]
 
+adc_feedback_output = adc(array_2_filtered_sampled, max(array_2_filtered_sampled), no_of_bits)
+bin_to_dec = zeros(len(adc_feedback_output))
