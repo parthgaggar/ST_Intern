@@ -8,11 +8,11 @@ import numpy as np
 no_of_bits = 8  # Number of Bits
 base=2     #radix
 levels = base**no_of_bits       # Total Number of Quantized Levels
-Vm = levels                     # Max Voltage
+Vm = 8                     # Max Voltage
 no_of_iterations = 1            #No of times the DAC is run
 mu = 1                          #mean of radix
 sigma = 0.0                     #std dev of radix
-alpha = 0.0                     #higher order coefficient
+alpha = 0.001                     #higher order coefficient
 order = 2                       #order of non linearity
 transposed_matrix = [[0 for x in arange(no_of_iterations)] for x in arange(levels)]
 for p in arange(levels):
@@ -67,8 +67,8 @@ sfdr_input = 10*log10(SignalPow/worst_spur)
 print "SFDR_input",sfdr_input
 
 #Plot the signal
-#plot (20*log10(abs(Fkk)))
-#show()
+plot (20*log10(abs(Fkk)))
+show()
 
 #############ADC using successive approximation#############
 def adc(fx,fx_max,bit_num):
@@ -92,19 +92,24 @@ def adc(fx,fx_max,bit_num):
         output.append(dig_out_adc)
     return output
 
-adc_output = adc(fx, fx_max, no_of_bits)
+adc_output = adc(fx, Vm-1, no_of_bits)
 no_of_inputs = len(adc_output) #input count
 
                     #######DAC starts here########
 
     
 dig_input=adc_output
-time_init = 0                                   #start time
-time_final = time_init + 1*sample_duration      #end time
-time_step = 0.1*sample_duration                 #time steps
+dec_input = zeros(len(dig_input))
+for k in arange(len(dig_input)):
+    eg_input = dig_input[k]
+    dec_input[k] = sum([int(eg_input[z])*(2**(no_of_bits-z-1)) for z in arange(no_of_bits)])
+dec_input = dec_input/(2**no_of_bits)*(Vm)
+time_init = 0                                       #start time
+time_final = time_init + 1*sample_duration          #end time
+time_step = 0.1*sample_duration                     #time steps
 total_steps = (time_final - time_init)/time_step
-rvalue = 1                                      #load resistor
-cvalue = 0.001*sample_duration                                  #load capacitance
+rvalue = 1                                          #load resistor
+cvalue = 0.001*sample_duration                      #load capacitance
 def mismatch_power_calculator(current_source, radix, exponent, num_bits):
     val = 0
     skip_array =[1.0*2**x for x in arange(exponent + 1, num_bits)]
@@ -128,7 +133,7 @@ def current_cell(current_source,x,radix,alpha,order):
     return output
     
 def first_order_out_rc(step_size, time_init, time_final, time_step, rvalue, cvalue):
-    sample_points = arange(time_init, time_final, time_step)
+    sample_points = linspace(time_init, time_final, total_steps)
     val= step_size*(1 - exp (-1/(rvalue*cvalue)*sample_points))
     return val
 
@@ -184,14 +189,11 @@ for d in arange(no_of_iterations):
         analog_output=0
     
         voltage = current_cell(current_sources,dig_input[count],base,alpha,order)  #output voltage
-        
-        normalized_voltage = 1.0*voltage/(levels)  #normalized voltage
-    
-        desired_voltage = normalized_voltage * Vm     #Final Output voltage
+        desired_voltage = voltage/levels * Vm*1.0     #Final Output voltage
         arr=array_2
         tmpval= array_2[len(array_2)-1]
         if dig_input[count] == dig_input[count-1]:
-            array_1 = first_order_out_rc(desired_voltage-tmpval, time_init+1*sample_duration, time_init+2*sample_duration, time_step, rvalue, cvalue)
+            array_1 = first_order_out_rc(desired_voltage-tmpval, time_init+1*sample_length, time_init+2*sample_length, time_step, rvalue, cvalue)
         else:
             array_1 = first_order_out_rc(desired_voltage-tmpval, time_init, time_final, time_step, rvalue, cvalue)
     
@@ -200,8 +202,8 @@ for d in arange(no_of_iterations):
             array_2= concatenate((arr,array_2), axis=0)
     #array_2 = array_2/max(array_2)*(levels - 1)
     #print dnlandinl(levels,array_2,d,total_steps)
-    #plot(array_2)
-    #show()
+    plot(array_2)
+    show()
     
     #Output SINAD
     Fk = fft.rfft(array_2)
@@ -232,29 +234,67 @@ for d in arange(no_of_iterations):
     print "SFDR_output",sfdr_output
     
     #Plot the signal
-    plot(20*log10(abs(Fk)))
-    show()
+    #plot(20*log10(abs(Fk)))
+    #show()
 
 ######################ADC feedback###############
-
+no_of_bits_adc = 16
+full_scale_voltage = 8
 dac_sampling_frequency = 1.0/sample_duration
 adc_sampling_frequency = dac_sampling_frequency/10.0
 adc_sampling_duration = 1.0/adc_sampling_frequency
 dac_nyquist_frequency = dac_sampling_frequency/2.0
-filter_order = 10
+filter_order = 8
 cutoff_freq_fraction = adc_sampling_frequency/dac_nyquist_frequency 
-b, a = signal.butter(filter_order,cutoff_freq_fraction,'low')
-w, h = signal.freqs(b,a)
-plot (w,20*log10(abs(h)))
-xscale('log')
-show()
+b, a = signal.butter(filter_order,cutoff_freq_fraction/total_steps,'low')
 array_2_filtered = signal.filtfilt(b, a, array_2)
 plot (array_2_filtered)
 show()
-Fk_filtered = fft.rfft(array_2_filtered)
-plot (20*log10(abs(Fk_filtered)))
-show()
 array_2_filtered_sampled = [array_2_filtered[k-1] for k in arange(total_steps*adc_sampling_duration/sample_duration,len(array_2_filtered)+1,total_steps*adc_sampling_duration/sample_duration)]
+Fk_filtered = fft.rfft(array_2_filtered_sampled)
+#plot (20*log10(abs(Fk_filtered)))
+#show()
+adc_feedback_output = adc(array_2_filtered_sampled, full_scale_voltage, no_of_bits_adc)
 
-adc_feedback_output = adc(array_2_filtered_sampled, max(array_2_filtered_sampled), no_of_bits)
 bin_to_dec = zeros(len(adc_feedback_output))
+for i in arange(len(adc_feedback_output)):
+    eg_output = adc_feedback_output[i]
+    bin_to_dec[i] = sum([int(eg_output[q])*(2**(no_of_bits_adc-q-1)) for q in arange(no_of_bits_adc)])
+bin_to_dec = bin_to_dec/(2**no_of_bits_adc)*(full_scale_voltage)
+dec_input_sampled = [dec_input[w] for w in arange(0,len(dec_input),dac_sampling_frequency/adc_sampling_frequency)]
+###############Adaptive LMS filter################
+def adaptive_lms_filter(no_of_weights,no_of_runs,input_x,desired_d):
+    L = no_of_weights                                                     #No of weights
+    weights = [0 for x in arange(L)]                                      #weights
+    interval = 1.0/no_of_iterations
+    samples = arange(0,1,interval)
+    f=100.0
+    noise = np.random.normal(0,0.001,1)                                   #noise
+    output = zeros(no_of_runs)
+    desired = desired_d
+    #desired = 0.5*noise + sin(2*pi*f*samples)
+    #desired = [1.5 + 2*noise for i in arange(no_of_iterations)]          #desired output
+    error = zeros(no_of_iterations)                                       #error
+    #inputs = [1 + noise for i in arange(no_of_iterations)]               #input containing noise
+    #inputs = 0.5*4*noise + sin(2*pi*f*samples)
+    inputs = input_x
+    x = inputs
+    x = array(x)
+    beta = 0.001
+    for t in arange(no_of_runs):
+        x[0] = inputs[t]
+        for p in arange(L):
+            output[t] += x[p]*weights[p]
+        error[t] = desired[t] - output
+        for p in arange(L):
+            weights[p] = weights[p] + 2*beta*error[t]*x[p]
+        x = array(x)
+        x.resize(len(x)+1)
+        x[1:] = x[0:len(x)-1]
+        x[0] = 0
+    plot (error**2)
+    show()
+    return output
+weights = 12
+iterations = 500
+adaptive_filter_output = adaptive_lms_filter(weights, iterations, bin_to_dec, dec_input)
