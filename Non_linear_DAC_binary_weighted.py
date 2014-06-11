@@ -74,28 +74,24 @@ show()
 def adc(fx,fx_max,bit_num):
     output=[]
     for each_val in fx:
-        j=0
         dig_out_adc=''
         cmp_val = (fx_max)/2.0
-        while j < bit_num:
-
+        for j in arange(bit_num):
             if each_val >= cmp_val:
                 dig_out_adc = dig_out_adc+'1'
                 if j!=bit_num - 1:
                     cmp_val = cmp_val + (fx_max+1)*1.0/(2**(j+2))
-            
             else:
                 dig_out_adc = dig_out_adc+'0'
                 if j!=bit_num - 1:
                     cmp_val = cmp_val - (fx_max+1)*1.0/(2**(j+2))
-            j=j+1
         output.append(dig_out_adc)
     return output
 
 adc_output = adc(fx, Vm-1, no_of_bits)
 no_of_inputs = len(adc_output) #input count
 
-                    #######DAC starts here########
+                    #######DAC constituents########
 
     
 dig_input=adc_output
@@ -106,7 +102,7 @@ for k in arange(len(dig_input)):
 dec_input = dec_input/(2**no_of_bits)*(Vm)
 time_init = 0                                       #start time
 time_final = time_init + 1*sample_duration          #end time
-time_step = 0.1*sample_duration                     #time steps
+time_step = 0.01*sample_duration                     #time steps
 total_steps = (time_final - time_init)/time_step
 rvalue = 1                                          #load resistor
 cvalue = 0.001*sample_duration                      #load capacitance
@@ -125,10 +121,7 @@ def current_cell(current_source,x,radix,alpha,order):
     f=0
     output=0
     length = len(x)
-    
-    for m in x:
-        output += int(x[f])* mismatch_power_calculator(current_source, radix, length-1-f, no_of_bits)
-        f+=1
+    output = sum([int(x[f])* mismatch_power_calculator(current_source, radix, length-1-f, no_of_bits) for f in arange(length)])
     output +=alpha*(output**order)
     return output
     
@@ -171,32 +164,49 @@ def dnlandinl(no_of_inputs,arrays,iteration_no,total_steps):
     mean_inl = mean(inl_array)
     return (mean_dnl,mean_inl)
 
-
+###############Adaptive LMS filter################
+def adaptive_lms_filter(no_of_weights,no_of_runs,input_x,desired_d):
+    L = no_of_weights                                                     #No of weights
+    weights = [0 for x in arange(L)]                                      #weights
+    output = zeros(no_of_runs)
+    desired = desired_d
+    #desired = 0.5*noise + sin(2*pi*f*samples)
+    #desired = [1.5 + 2*noise for i in arange(no_of_runs)]          #desired output
+    error = zeros(no_of_runs)                                             #error
+    #input_x = [1 + noise for i in arange(no_of_runs)]               #input containing noise
+    #input_x = 0.5*4*noise + sin(2*pi*f*samples)
+    x = zeros(no_of_runs) 
+    beta = 0.001
+    for t in arange(no_of_runs):
+        x[0] = input_x[t]
+        for p in arange(L):
+            output[t] += x[p]*weights[p]
+        error[t] = desired[t] - output[t]
+        for p in arange(L):
+            weights[p] = weights[p] + 2*beta*error[t]*x[p]
+        x = array(x)
+        x.resize(len(x)+1)
+        x[1:] = x[0:len(x)-1]
+        x[0] = 0
+    plot (error**2)
+    show()
+    return weights
 
 
 for d in arange(no_of_iterations):
-    for i in arange(0,base**no_of_bits):
-        current_sources = source_matrix[d]
+    current_sources = source_matrix[d]
     tmpval = 0
     count = 0
-    volt = 0
     desired_voltage = 0
     array_2 = zeros(no_of_inputs)
     inl_array = zeros(no_of_iterations)
     for count in arange(no_of_inputs) :
-    
-        #convert from binary to decimal
         analog_output=0
-    
         voltage = current_cell(current_sources,dig_input[count],base,alpha,order)  #output voltage
         desired_voltage = voltage/levels * Vm*1.0     #Final Output voltage
         arr=array_2
         tmpval= array_2[len(array_2)-1]
-        if dig_input[count] == dig_input[count-1]:
-            array_1 = first_order_out_rc(desired_voltage-tmpval, time_init+1*sample_length, time_init+2*sample_length, time_step, rvalue, cvalue)
-        else:
-            array_1 = first_order_out_rc(desired_voltage-tmpval, time_init, time_final, time_step, rvalue, cvalue)
-    
+        array_1 = first_order_out_rc(desired_voltage-tmpval, time_init, time_final, time_step, rvalue, cvalue)
         array_2 = [tmpval + array_element for array_element in array_1]
         if count!=0:
             array_2= concatenate((arr,array_2), axis=0)
@@ -244,6 +254,8 @@ dac_sampling_frequency = 1.0/sample_duration
 adc_sampling_frequency = dac_sampling_frequency/10.0
 adc_sampling_duration = 1.0/adc_sampling_frequency
 dac_nyquist_frequency = dac_sampling_frequency/2.0
+
+##################Butterworth filter#############
 filter_order = 8
 cutoff_freq_fraction = adc_sampling_frequency/dac_nyquist_frequency 
 b, a = signal.butter(filter_order,cutoff_freq_fraction/total_steps,'low')
@@ -256,45 +268,12 @@ Fk_filtered = fft.rfft(array_2_filtered_sampled)
 #show()
 adc_feedback_output = adc(array_2_filtered_sampled, full_scale_voltage, no_of_bits_adc)
 
+#################Adaptive Filter################
 bin_to_dec = zeros(len(adc_feedback_output))
 for i in arange(len(adc_feedback_output)):
     eg_output = adc_feedback_output[i]
     bin_to_dec[i] = sum([int(eg_output[q])*(2**(no_of_bits_adc-q-1)) for q in arange(no_of_bits_adc)])
 bin_to_dec = bin_to_dec/(2**no_of_bits_adc)*(full_scale_voltage)
 dec_input_sampled = [dec_input[w] for w in arange(0,len(dec_input),dac_sampling_frequency/adc_sampling_frequency)]
-###############Adaptive LMS filter################
-def adaptive_lms_filter(no_of_weights,no_of_runs,input_x,desired_d):
-    L = no_of_weights                                                     #No of weights
-    weights = [0 for x in arange(L)]                                      #weights
-    interval = 1.0/no_of_iterations
-    samples = arange(0,1,interval)
-    f=100.0
-    noise = np.random.normal(0,0.001,1)                                   #noise
-    output = zeros(no_of_runs)
-    desired = desired_d
-    #desired = 0.5*noise + sin(2*pi*f*samples)
-    #desired = [1.5 + 2*noise for i in arange(no_of_iterations)]          #desired output
-    error = zeros(no_of_iterations)                                       #error
-    #inputs = [1 + noise for i in arange(no_of_iterations)]               #input containing noise
-    #inputs = 0.5*4*noise + sin(2*pi*f*samples)
-    inputs = input_x
-    x = inputs
-    x = array(x)
-    beta = 0.001
-    for t in arange(no_of_runs):
-        x[0] = inputs[t]
-        for p in arange(L):
-            output[t] += x[p]*weights[p]
-        error[t] = desired[t] - output
-        for p in arange(L):
-            weights[p] = weights[p] + 2*beta*error[t]*x[p]
-        x = array(x)
-        x.resize(len(x)+1)
-        x[1:] = x[0:len(x)-1]
-        x[0] = 0
-    plot (error**2)
-    show()
-    return output
 weights = 12
-iterations = 500
-adaptive_filter_output = adaptive_lms_filter(weights, iterations, bin_to_dec, dec_input)
+weights = adaptive_lms_filter(weights, len(bin_to_dec), bin_to_dec, dec_input_sampled)
