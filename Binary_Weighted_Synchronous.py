@@ -61,8 +61,8 @@ sfdr_input = 10*log10(SignalPow/worst_spur)
 print "SFDR_input",sfdr_input
 
 #Plot the signal
-plot (20*log10(abs(Fkk)))
-show()
+#plot (20*log10(abs(Fkk)))
+#show()
 
 #############ADC using successive approximation#############
 def adc(fx,fx_max,bit_num):
@@ -91,7 +91,7 @@ time_init = 0                                       #start time
 time_final = time_init + 1*sample_duration          #end time
 time_step = 0.01*sample_duration                     #time steps
 total_steps = (time_final - time_init)/time_step
-rvalue = 1                                          #load resistor
+rvalue = 10                                          #load resistor
 cvalue = 0.001*sample_duration                      #load capacitance
 
 def mismatch_power_calculator(current_source, radix, exponent, num_bits):
@@ -160,12 +160,10 @@ weights = [0 for x in arange(no_of_weights)]
 def adaptive_lms_filter(x,weights, desired_d):
     L = len(weights)                        #No of weights
     beta = 0.001
-    output = 0.0
-    for p in arange(L):
-        output += x[p]*weights[p]
+    output = sum([x[p]*weights[p] for p in arange(L)])
     error = desired_d - output
     for p in arange(L):
-        weights[p] = weights[p] + 2*beta*error*x[p]
+        weights[p] = weights[p]+2*beta*error*x[p]
     return (weights,error)
 ##############Single input ADC feedback############
 def adc_single_input(fx,fx_max,bit_num):
@@ -174,13 +172,13 @@ def adc_single_input(fx,fx_max,bit_num):
     output=''
     for j in arange(bit_num):
         if fx >= cmp_val:
-            dig_out_adc = dig_out_adc+'1'
+            dig_out_adc += '1'
             if j!=bit_num - 1:
-                cmp_val = cmp_val + (fx_max+1)*1.0/(2**(j+2))
+                cmp_val += (fx_max+1)*1.0/(2**(j+2))
         else:
-            dig_out_adc = dig_out_adc+'0'
+            dig_out_adc += '0'
             if j!=bit_num - 1:
-                cmp_val = cmp_val - (fx_max+1)*1.0/(2**(j+2))
+                cmp_val -= (fx_max+1)*1.0/(2**(j+2))
     output+=dig_out_adc
     return output
 ######################ADC feedback###############
@@ -191,13 +189,17 @@ adc_sampling_frequency = dac_sampling_frequency/10.0
 adc_sampling_duration = 1.0/adc_sampling_frequency
 dac_nyquist_frequency = dac_sampling_frequency/2.0
 ##################Butterworth filter#############
-filter_order = 8
+filter_order = 1
 cutoff_freq_fraction = adc_sampling_frequency/dac_nyquist_frequency
-b, a = signal.butter(filter_order,cutoff_freq_fraction/total_steps,'low')
+b, a = signal.butter(filter_order,0.04,'low',analog = True)
+w, h = signal.freqs(b, a)
+plt.plot(20*log10(abs(h)))
 array_mem = zeros(no_of_weights)
 transposed_matrix = [[1 for x in arange(no_of_inputs)] for x in arange(levels)]
 source_matrix = array(transposed_matrix).transpose()
 array_2 = zeros(no_of_inputs)
+array_2_filtered = zeros(no_of_inputs)
+
 for m in arange(no_of_inputs):
     dig_input=adc_output[m]
     dec_input = sum([int(dig_input)*(2**(no_of_bits-z-1)) for z in arange(no_of_bits)])
@@ -214,23 +216,30 @@ for m in arange(no_of_inputs):
     voltage = current_cell(current_sources,dig_input,base,alpha,order)  #output voltage
     desired_voltage = voltage/levels * Vm*1.0     #Final Output voltage
     arr=array_2
+    arr_filtered = array_2_filtered
+    #plot (arr_filtered)
+    #show()
     tmpval= array_2[len(array_2)-1]
+    tmpval_filtered = array_2_filtered[len(array_2_filtered)-1]
     #create array_2
     array_1 = first_order_out_rc(desired_voltage-tmpval, time_init, time_final, time_step, rvalue, cvalue)
     array_2 = [tmpval + array_element for array_element in array_1]
-    array_3 = array_2
+    #plot (array_2)
+    #show()
+    array_2_filtered = signal.filtfilt(b, a, array_2)
+    #plot (array_2_filtered)
+    show()
     if m!=0:
         array_2= concatenate((arr,array_2), axis=0)
-    #filter the array
-    array_3_filtered = signal.filtfilt(b, a, array_3)
-    if m!=0:
-       array_3_filtered =  concatenate((arr,array_3_filtered), axis=0)#######################################Last Checkpoint
+        array_2_filtered =  concatenate((arr_filtered,array_2_filtered), axis=0)
+    #plot (array_2_filtered)
+    #show()
     if m%(adc_sampling_duration/sample_duration) == 0:
-        array_3_filtered_sampled = array_3_filtered[total_steps-1]
-        #Fk_filtered = fft.rfft(array_3_filtered_sampled)
+        array_2_filtered_sampled = array_2_filtered[total_steps-1]
+        #Fk_filtered = fft.rfft(array_2_filtered_sampled)
         #plot (20*log10(abs(Fk_filtered)))
         #show()
-        adc_feedback_output = adc_single_input(array_3_filtered_sampled, full_scale_voltage_adc, no_of_bits_adc)
+        adc_feedback_output = adc_single_input(array_2_filtered_sampled, full_scale_voltage_adc, no_of_bits_adc)
         #################Adaptive Filter################
         bin_to_dec = sum([int(adc_feedback_output[q])*(2**(no_of_bits_adc-q-1)) for q in arange(no_of_bits_adc)])
         bin_to_dec = bin_to_dec/(2**no_of_bits_adc)*(full_scale_voltage_adc)
@@ -238,14 +247,20 @@ for m in arange(no_of_inputs):
         temp_array = adaptive_lms_filter(array_mem, weights, dec_input)
         weights = temp_array[0]
         error = temp_array[1]
-        plot (array_3_filtered)
+        
         array_mem = array(array_mem)
         array_mem[1:] = array_mem[0:len(array_mem)-1]
 #array_2 = array_2/max(array_2)*(levels - 1)
 #print dnlandinl(levels,array_2,d,total_steps)
-#plot(array_2)
+plot(array_2)
+plot (array_2_filtered)
 show()
-
+Fk_filtered = fft.rfft(array_2)
+#plot (20*log10(abs(Fk_filtered)))
+#show()
+FF_filtered = fft.rfft(array_2_filtered)
+#plot (20*log10(abs(array_2_filtered)))
+#show()
 #Output SINAD
 Fk = fft.rfft(array_2)
 m=arange(0,len(PowerSq))
