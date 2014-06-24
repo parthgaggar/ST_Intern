@@ -102,7 +102,7 @@ for k in arange(len(dig_input)):
 dec_input = dec_input/(2**no_of_bits)*(Vm)
 time_init = 0                                       #start time
 time_final = time_init + 1*sample_duration          #end time
-time_step = 0.01*sample_duration                     #time steps
+time_step = 0.05*sample_duration                     #time steps
 total_steps = (time_final - time_init)/time_step
 rvalue = 1                                          #load resistor
 cvalue = 0.001*sample_duration                      #load capacitance
@@ -188,8 +188,8 @@ def adaptive_lms_filter(no_of_weights,no_of_runs,input_x,desired_d):
         x.resize(len(x)+1)
         x[1:] = x[0:len(x)-1]
         x[0] = 0
-    plot (error**2)
-    show()
+    #plot (error**2)
+    #show()
     return weights
 
 
@@ -212,8 +212,8 @@ for d in arange(no_of_iterations):
             array_2= concatenate((arr,array_2), axis=0)
     #array_2 = array_2/max(array_2)*(levels - 1)
     #print dnlandinl(levels,array_2,d,total_steps)
-    plot(array_2)
-    show()
+    #plot(array_2)
+    #show()
     
     #Output SINAD
     Fk = fft.rfft(array_2)
@@ -258,9 +258,12 @@ dac_nyquist_frequency = dac_sampling_frequency/2.0
 ##################Butterworth filter#############
 filter_order = 8
 cutoff_freq_fraction = adc_sampling_frequency/dac_nyquist_frequency 
-b, a = signal.butter(filter_order,cutoff_freq_fraction/total_steps,'low')
+b, a = signal.butter(filter_order,cutoff_freq_fraction,'low')
 array_2_filtered = signal.filtfilt(b, a, array_2)
 plot (array_2_filtered)
+show()
+FF_filtered = fft.rfft(array_2_filtered)
+plot (20*log10(abs(FF_filtered)))
 show()
 array_2_filtered_sampled = [array_2_filtered[k-1] for k in arange(total_steps*adc_sampling_duration/sample_duration,len(array_2_filtered)+1,total_steps*adc_sampling_duration/sample_duration)]
 Fk_filtered = fft.rfft(array_2_filtered_sampled)
