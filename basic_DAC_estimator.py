@@ -23,6 +23,7 @@ dig_out_adc = zeros(no_of_bits)
 no_of_inputs = 1000
 #################ADC successive approximation#########
 x = [np.random.normal(5,1) for t in arange(no_of_inputs)]
+
 def adc(fx,fx_max,bit_num):
     output=[]
     for each_val in fx:
@@ -99,38 +100,40 @@ def adc_single_input(fx,fx_max,bit_num):
 ###############Adaptive LMS filter################
 no_of_weights = 8
 weights = zeros(no_of_weights)
+
 error = zeros(no_of_inputs)
 def adaptive_lms_filter(x,weights, desired_d):
     L = len(weights)                        
     beta = 0.001
-    output = sum([x[p]*weights[p] for p in arange(L)])
+    output = sum([x[u]*weights[u] for u in arange(L)])
     error = desired_d - output
-    for p in arange(L):
-        weights[p] = weights[p]+2*beta*error*x[p]
+    #print error
+    weights = [weights[p]+2*beta*error*x[p] for p in arange(L)]
     return (weights,error)
-
+weights = zeros(no_of_weights)
 array_mem = zeros(no_of_weights)
 transposed_matrix = [[1 for x in arange(no_of_inputs)] for x in arange(levels)]
 source_matrix = array(transposed_matrix).transpose()
 array_2 = zeros(no_of_inputs)
+radix_set = [2**(no_of_bits-h-1) for h in arange(no_of_bits)]
+#print weights
 for m in arange(no_of_inputs):
     dig_input=adc_output[m]
     current_sources = source_matrix[m]
-    voltage = sum([int(dig_input[f])* (2**(len(dig_input)-1-f)+ weights[f]) for f in arange(len(dig_input))])
-    voltage_non_linear = voltage + alpha*(voltage**order)
-    #print dig_input,voltage,voltage_non_linear    
-    desired_voltage = voltage/levels * Vm*1.0     
-    actual_voltage = voltage_non_linear/levels * Vm*1.0
-    #print voltage,voltage_non_linear,actual_voltage,desired_voltage
-    array_2[m] = desired_voltage
+    voltage_dac_input = sum( [int(dig_input[q])*radix_set[q]) for q in arange(len(dig_input))])
+    voltage_dac_output = sum([int(dig_input[f])*radix_set[f]) for f in arange(len(dig_input))])
+    voltage_non_linear = voltage_dac_output + alpha*(voltage_dac_output**order)
+    #print voltage_non_linear
+    desired_voltage = voltage_dac_input*1.0     
+    actual_voltage = voltage_non_linear*1.0
+    print desired_voltage,actual_voltage
     ################Adaptive Filter################
-    array_mem[0] = array_2[m]
+    array_mem[0] = actual_voltage
     temp_array = adaptive_lms_filter(array_mem, weights, desired_voltage)
     weights = temp_array[0]
     error[m] = temp_array[1]
     array_mem = array(array_mem)
     array_mem[1:] = array_mem[0:len(array_mem)-1]
-    
 #array_2 = array_2/max(array_2)*(levels - 1)
 #print dnlandinl(levels,array_2,d,total_steps)
 plot(array_2)
