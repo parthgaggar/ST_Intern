@@ -5,7 +5,7 @@ from numpy import fft
 from random import randint
 import numpy as np
 
-no_of_bits = 8  # Number of Bits
+no_of_bits = 1  # Number of Bits
 base=2     #radix
 levels = base**no_of_bits       # Total Number of Quantized Levels
 Vm = 8                     # Max Voltage
@@ -13,9 +13,9 @@ alpha = 0.001                     #higher order coefficient
 order = 2                       #order of non linearity
 ################Sample and Hold Circuit###############
 dig_out_adc = zeros(no_of_bits)
-no_of_inputs = 10000
+no_of_inputs = 20000
 #################ADC successive approximation#########
-x = [1.0 for t in arange(no_of_inputs)]
+x = [np.random.normal(0,1) for t in arange(no_of_inputs)]
 
 def adc(fx,fx_max,bit_num):
     output=[]
@@ -35,62 +35,29 @@ def adc(fx,fx_max,bit_num):
     return output
 adc_output = adc(x,max(x),no_of_bits)
 
-#############Single input ADC feedback############
-def adc_single_input(fx,fx_max,bit_num):
-    dig_out_adc=''
-    cmp_val = (fx_max)/2.0
-    output=''
-    for j in arange(bit_num):
-        if fx >= cmp_val:
-            dig_out_adc += '1'
-            if j!=bit_num - 1:
-                cmp_val += (fx_max+1)*1.0/(2**(j+2))
-        else:
-            dig_out_adc += '0'
-            if j!=bit_num - 1:
-                cmp_val -= (fx_max+1)*1.0/(2**(j+2))
-    output+=dig_out_adc
-    return output
-
-###############Adaptive LMS filter################
-no_of_weights = no_of_bits
+no_of_weights = 9 
 error = zeros(no_of_inputs)
-def adaptive_lms_filter(x_input,weight, desired_d):
+def adaptive_lms_filter(x_input,weight, desired_d,beta):
     L = len(weight)                        
-    beta = 0.0001
-    #output = sum([int(x[u])*weight[u] for u in arange(L)])
-    error = desired_d - x_input
+    y_output = sum([x_input[a]*weight[a] for a in arange(no_of_weights)])
+    error = (desired_d - y_output)/1.0
     #print error,weight,x_input,beta
     for p in arange(L):
-        weight[p] = weight[p] + 2*beta*error*x_input
+        weight[p] += 2*beta*error*x_input[p]
     return (error,weight)
-weights = zeros(no_of_weights)
-array_mem = zeros(no_of_weights)
-radix_set = [2**(no_of_bits-h-1) for h in arange(no_of_bits)]
+
+weights = [2.0**h for h in arange(no_of_weights)]
+dig_input = zeros(no_of_weights)
 #print weights
+dac_coefficients = [np.random.normal(2.0,0.001)**b for b in arange(no_of_weights)]
 for m in arange(no_of_inputs):
-    dig_input=adc_output[m]
-    voltage_dac_input  = sum([int(dig_input[q])*radix_set[q] for q in arange(len(dig_input))])
-    modified_dig_input = [int(dig_input[r])*(1.0+ weights[r]) for r in arange(len(dig_input))]
-    #print modified_dig_input
-    voltage_dac_output = sum([modified_dig_input[f]*radix_set[f] for f in arange(len(dig_input))])
-    voltage_non_linear = voltage_dac_output + alpha*(voltage_dac_output**order)
-    print voltage_dac_input,modified_dig_input,voltage_dac_output,voltage_non_linear,weights,voltage_dac_output
-    temp_array = adaptive_lms_filter(voltage_non_linear/100.0, weights, voltage_dac_input/100.0)
-    weights = temp_array[1]
-    error[m] = temp_array[0]
-    #print temp_array
-    ################Adaptive Filter################
-    '''
-    array_mem[0] = actual_voltage
-    array_mem = array(array_mem)
-    array_mem[1:] = array_mem[0:len(array_mem)-1]
-    '''
-#array_2 = array_2/max(array_2)*(levels - 1)
-#print dnlandinl(levels,array_2,d,total_steps)
-#plot(array_2)
-#show()
-#plot (weights)
-#show()
+    dig_input[0] = adc_output[m]
+    dac_out = sum([dig_input[q]*dac_coefficients[q] for q in arange(no_of_weights)])
+    tmp_array = adaptive_lms_filter(dig_input,weights,dac_out,0.01)
+    error[m] = tmp_array[0]
+    weights = tmp_array[1]
+    dig_input[1:] = dig_input[0:no_of_weights-1]
+    dig_input[0] = 0.0
+
 plot (error)
 show()
