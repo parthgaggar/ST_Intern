@@ -7,15 +7,14 @@ import numpy as np
 
 no_of_bits = 1  # Number of Bits
 base=2     #radix
-levels = base**no_of_bits       # Total Number of Quantized Levels
-Vm = 8                     # Max Voltage
-alpha = 0.001                     #higher order coefficient
+Vm = 8                          # Max Voltage
+alpha = 0.001                   #higher order coefficient
 order = 2                       #order of non linearity
 ################Sample and Hold Circuit###############
 dig_out_adc = zeros(no_of_bits)
 no_of_inputs = 16000
 #################ADC successive approximation#########
-x = [np.random.normal(0,1) for t in arange(no_of_inputs)]
+x = [np.random.normal(0,1) for t in arange(no_of_inputs)] #signal with mean = 0 and std.dev = 1
 def adc(fx,fx_max,bit_num):
     output=[]
     for each_val in fx:
@@ -36,7 +35,9 @@ adc_output = adc(x,max(x),no_of_bits)
 
 no_of_weights = 26 
 error = zeros(no_of_inputs)
-def adaptive_lms_filter(x_input,weight, desired_d,beta):
+
+################LMS#########################
+def adaptive_lms(x_input,weight, desired_d,beta):
     L = len(weight)                        
     y_output = sum([x_input[a]*weight[a] for a in arange(no_of_weights)])
     error = (desired_d - y_output)/1.0
@@ -44,19 +45,24 @@ def adaptive_lms_filter(x_input,weight, desired_d,beta):
     for p in arange(L):
         weight[p] += 2*beta*error*x_input[p]
     return (error,weight)
+###############weights#######################
 no_of_dac_bits = 14
 weights = zeros(no_of_weights)
+
 for i in arange(8):
-    weights[i] = 2**i * 1.0
+    weights[i] = 2.0**i
 weights[8:11] = 256.0
 weights[11:26] = 1024.0
 dig_input = zeros(no_of_weights)
 #print weights
+
+
 dac_coefficients = [weights[b] + np.random.normal(0.0,0.01) for b in arange(no_of_weights)]
+
 for m in arange(no_of_inputs):
     dig_input[0] = adc_output[m]
     dac_out = sum([dig_input[q]*dac_coefficients[q] for q in arange(no_of_weights)])
-    tmp_array = adaptive_lms_filter(dig_input,weights,dac_out,0.01)
+    tmp_array = adaptive_lms(dig_input,weights,dac_out,0.01)
     error[m] = tmp_array[0]
     weights = tmp_array[1]
     dig_input[1:] = dig_input[0:no_of_weights-1]
